@@ -19,6 +19,9 @@ export interface QuizQuestion {
   correctAnswer: number;
   explanation: string;
   subtopic?: string;
+  type?: 'multiple-choice' | 'labeling' | 'matching';
+  imageLabels?: Array<{ id?: string; label: string; position: { x: number; y: number } }>;
+  matchingPairs?: Array<{ id?: string; left: string; right: string }>;
 }
 
 export interface StudyMaterial {
@@ -47,6 +50,7 @@ export interface Achievement {
   unlocked: boolean;
   requirement: number;
   currentValue: number;
+  rarity?: 'gold' | 'silver' | 'bronze';
 }
 
 export interface StudyGoal {
@@ -62,6 +66,7 @@ export interface UserStats {
   totalFlashcardsViewed: number;
   perfectQuizzes: number;
   streakDays: number;
+  currentPerfectStreak: number;
   lastActive: string;
 }
 
@@ -107,6 +112,7 @@ export interface SavedUpload {
   sourceText?: string;
   sourceDataUrl?: string;
   sourceMimeType?: string;
+  sources?: Array<{ fileName?: string; sourceDataUrl?: string; sourceText?: string; sourceMimeType?: string }>;
 }
 
 // Theme types

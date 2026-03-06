@@ -200,8 +200,8 @@ export const SessionList: React.FC<SessionListProps> = ({
 
                                                     {q.type === 'labeling' && q.imageLabels && (
                                                         <div className="flex flex-wrap gap-2 mt-2">
-                                                            {q.imageLabels.map(l => (
-                                                                <span key={l.id} className="px-3 py-1 bg-theme-accent-bg text-theme-accent rounded-full text-[10px] font-black border border-theme-accent uppercase tracking-tighter">
+                                                            {q.imageLabels.map((l, idx) => (
+                                                                <span key={l.id || idx} className="px-3 py-1 bg-theme-accent-bg text-theme-accent rounded-full text-[10px] font-black border border-theme-accent uppercase tracking-tighter">
                                                                     {l.label}
                                                                 </span>
                                                             ))}
@@ -210,8 +210,8 @@ export const SessionList: React.FC<SessionListProps> = ({
 
                                                     {q.type === 'matching' && q.matchingPairs && (
                                                         <div className="space-y-2 mt-2">
-                                                            {q.matchingPairs.map(p => (
-                                                                <div key={p.id} className="flex items-center justify-between p-3 bg-theme-card border border-theme-primary rounded-xl text-[10px]">
+                                                            {q.matchingPairs.map((p, idx) => (
+                                                                <div key={p.id || idx} className="flex items-center justify-between p-3 bg-theme-card border border-theme-primary rounded-xl text-[10px]">
                                                                     <span className="font-bold text-theme-secondary">{p.left}</span>
                                                                     <span className="text-theme-accent font-medium">→</span>
                                                                     <span className="text-theme-secondary">{p.right}</span>

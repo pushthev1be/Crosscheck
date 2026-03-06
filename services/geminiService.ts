@@ -265,7 +265,7 @@ Test Yourself:
 Common Misconception:
 [misconception text]
 
-Also generate 10 quiz questions (each with a "subtopic" field like "Pathophysiology") and 10 flashcard pairs.`
+Also generate 10 quiz questions (each with a "subtopic" field like "Pathophysiology") and 30 flashcard pairs.`
     : `Analyze these notes and generate a structured study guide. Format the summary with NEWLINES between each section and between each item:
 
 Big Picture Question:
@@ -291,7 +291,7 @@ Common Misconception:
 NOTES:
 ${content}
 
-Generate 10 quiz questions (each with a "subtopic" field like "Pathophysiology", "Pharmacology", "Diagnosis") and 10 flashcard pairs.`;
+Generate 10 quiz questions (each with a "subtopic" field like "Pathophysiology", "Pharmacology", "Diagnosis") and 30 flashcard pairs.`;
 
   try {
     return await retryWithBackoff(async () => {

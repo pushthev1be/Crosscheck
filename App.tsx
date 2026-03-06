@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Upload, FileText, BrainCircuit, Layout, Loader2, AlertCircle, Sparkles, Trophy, Target, X, LogOut, Flame, Moon, BookOpen, Star, Award, Zap, Heart, Stethoscope, History, Home } from 'lucide-react';
 import { AppState, StudyMaterial, ViewMode, Achievement, StudyGoal, UserStats, User, ProcessingState, StudyDomain, QuizSession, SavedUpload } from './types';
 import { processStudyContent, extendQuiz, generateQuestionForFailure, generateAdditionalFlashcards } from './services/geminiService';
+import { supabase } from './services/supabaseClient';
 import { SummaryView } from './components/SummaryView';
 import { FlashcardView } from './components/FlashcardView';
 import { QuizView } from './components/QuizView';
@@ -39,6 +40,7 @@ const INITIAL_STATS: UserStats = {
   totalFlashcardsViewed: 0,
   perfectQuizzes: 0,
   streakDays: 0,
+  currentPerfectStreak: 0,
   lastActive: new Date().toISOString()
 };
 
@@ -393,7 +395,13 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Supabase signOut error:', err);
+    }
+    
     localStorage.removeItem('sg_user');
     localStorage.removeItem('sg_stats');
     localStorage.removeItem('sg_achievements');

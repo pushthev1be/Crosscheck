@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrainCircuit, Mail, Lock, User as UserIcon, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { User } from '../types';
 import { supabase } from '../services/supabaseClient';
@@ -18,6 +18,51 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuth }) => {
   });
 
   const [errorMsg, setErrorMsg] = useState('');
+  const [showResendOption, setShowResendOption] = useState(false);
+
+  const handleResendConfirmation = async () => {
+    if (!formData.email) {
+      setErrorMsg('Please enter your email address.');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resendEnrollmentEmail(formData.email);
+      if (error) {
+        setErrorMsg('Failed to resend email: ' + error.message);
+      } else {
+        setErrorMsg('Confirmation email sent! Check your inbox and spam folder.');
+        setShowResendOption(false);
+      }
+    } catch (err: any) {
+      setErrorMsg('Error resending email: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Check for existing session on mount
+    const checkSession = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data.session?.user) {
+          // Session exists, restore user
+          onAuth({
+            id: data.session.user.id,
+            username: data.session.user.user_metadata?.username || data.session.user.email?.split('@')[0] || 'User',
+            email: data.session.user.email || '',
+            joinedAt: data.session.user.created_at || new Date().toISOString()
+          } as any);
+        }
+      } catch (err) {
+        console.error('Session check error:', err);
+      }
+    };
+    
+    checkSession();
+  }, [onAuth]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,14 +71,29 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuth }) => {
 
     try {
       if (isLogin) {
+        console.log('Attempting login with email:', formData.email);
         const { data, error } = await supabase.auth.signInWithPassword({
           email: formData.email,
           password: formData.password,
         });
 
-        if (error) throw error;
+        if (error) {
+          console.error('Login error:', error);
+          if (error.message.includes('Invalid login credentials')) {
+            setErrorMsg('Invalid email or password. Email confirmation may also be required.');
+            setShowResendOption(true);
+          } else if (error.message.includes('Email not confirmed')) {
+            setErrorMsg('Please confirm your email before logging in.');
+            setShowResendOption(true);
+          } else {
+            setErrorMsg(error.message || 'Login failed. Please try again.');
+            setShowResendOption(false);
+          }
+          return;
+        }
 
         if (data.user) {
+          console.log('Login successful for user:', data.user.id);
           onAuth({
             id: data.user.id,
             username: data.user.user_metadata?.username || formData.email.split('@')[0],
@@ -42,17 +102,13 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuth }) => {
           } as any);
         }
       } else {
-        // Check if email is already in use by trying to sign in first
-        const { data: existingUser } = await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: formData.password,
-        });
-
-        if (existingUser?.user) {
-          setErrorMsg('This email already has an account. Please log in instead.');
+        // Validate password strength
+        if (formData.password.length < 6) {
+          setErrorMsg('Password must be at least 6 characters long.');
           return;
         }
 
+        console.log('Attempting signup with email:', formData.email);
         const { data, error } = await supabase.auth.signUp({
           email: formData.email,
           password: formData.password,
@@ -64,17 +120,21 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuth }) => {
         });
 
         if (error) {
+          console.error('Signup error:', error);
           // Check for specific error messages from Supabase
-          if (error.message.includes('User already registered')) {
+          if (error.message.includes('already registered') || error.message.includes('User already exists')) {
             setErrorMsg('This email already has an account. Please log in instead.');
-          } else if (error.message.includes('rate limit')) {
+          } else if (error.message.includes('rate limit') || error.message.includes('429')) {
             setErrorMsg('Too many signup attempts. Please try again in a few minutes.');
+          } else if (error.message.includes('invalid email')) {
+            setErrorMsg('Please enter a valid email address.');
           } else {
-            throw error;
+            setErrorMsg(error.message || 'Signup failed. Please try again.');
           }
         } else if (data.session || data.user) {
           // If email confirmation is required, the user might not be immediately logged in.
           // But for simplicity, we pass them right through if a session exists
+          console.log('Signup successful for user:', data.user?.id);
           onAuth({
             id: data.user?.id || crypto.randomUUID(),
             username: formData.username || formData.email.split('@')[0],
@@ -82,11 +142,12 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuth }) => {
             joinedAt: data.user?.created_at || new Date().toISOString()
           } as any);
         } else {
-          setErrorMsg('Check your email for the confirmation link.');
+          setErrorMsg('Account created! Check your email for the confirmation link.');
         }
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Authentication failed');
+      console.error('Auth error:', err);
+      setErrorMsg(err.message || 'Authentication failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -107,9 +168,21 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuth }) => {
           <h2 className="text-2xl font-bold text-theme-primary mb-8">{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
 
           {errorMsg && (
-            <div className="mb-6 p-4 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-sm flex items-center gap-3 animate-fade-in">
-              <AlertCircle size={18} />
-              {errorMsg}
+            <div className="mb-6 p-4 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-sm flex flex-col gap-3 animate-fade-in">
+              <div className="flex items-start gap-3">
+                <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+              {showResendOption && isLogin && (
+                <button
+                  type="button"
+                  onClick={handleResendConfirmation}
+                  disabled={loading}
+                  className="mt-2 px-4 py-2 bg-rose-500 text-white rounded-lg text-xs font-bold hover:bg-rose-600 transition-colors disabled:opacity-50"
+                >
+                  {loading ? <Loader2 size={14} className="inline animate-spin" /> : 'Resend Confirmation Email'}
+                </button>
+              )}
             </div>
           )}
 
