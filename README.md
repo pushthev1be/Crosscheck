@@ -1,48 +1,72 @@
+# CrossCheck
 
-# StudyGenius AI
+**CrossCheck** is a conversational knowledge audit tool. Upload your study notes, and CrossCheck runs you through an adaptive Q&A session to surface exactly what you know and what you don't — then gives you a structured breakdown of your gaps.
 
-Transform study notes and documents into interactive summaries, flashcards, and board-style quizzes with AI.
+Built with React 19, TypeScript, Google Gemini 2.5 Flash, and Supabase.
 
-## Key Features
-- AI-generated study guides with structured sections
-- Flashcards with spaced-repetition ratings
-- Board-style quiz sessions with history and review
-- Past upload library with quick reopen/download
-- Domain-specific modes (PA, Nursing, Medical, GenEd)
+---
 
-## Local Setup
+## What it does
+
+Most study tools quiz you passively. CrossCheck interrogates you the way an examiner would — conversationally, with follow-ups, and with escalating pressure as the session progresses.
+
+1. **Upload notes** — PDF, plain text, or images (multi-page supported). Gemini Vision extracts and structures the content.
+2. **AI extracts topics** — Key concepts are identified and mapped from the notes automatically.
+3. **Live audit session** — A Gemini-powered examiner works through each topic in conversation. Mode escalates over the session:
+   - **Friend** (0–25%) → relaxed warm-up
+   - **Tutor** (25–50%) → guided understanding
+   - **Instructor** (50–75%) → precise, no soft nudges
+   - **Examiner** (75–100%) → rigorous, minimal reactions
+4. **"I don't know"** — One tap gives you the correct answer with explanation, then continues with a simpler follow-up. Topic is marked weak automatically.
+5. **Knowledge report** — After the session, every topic is classified as Strong / Weak / Needs Revisit with evidence. Weak topics expand to show the exact concepts to go back and study.
+6. **Study again** — Re-run a session on the same notes in one click.
+
+---
+
+## Technical highlights
+
+| Area | Detail |
+|---|---|
+| **AI** | Google Gemini 2.5 Flash via `@google/genai` SDK |
+| **Streaming** | All Gemini calls use `generateContentStream` — bypasses SDK-level JSON validation that throws on truncated structured output |
+| **JSON recovery** | 6-stage `safeParseJSON` pipeline: direct parse → clean (trailing commas, unquoted keys) → slice → repair truncated structures → truncation fallback → regex field extraction |
+| **Vision** | Multi-image OCR via inline base64 in a single Gemini call |
+| **Auth** | Supabase email + password auth |
+| **Persistence** | Session reports stored in localStorage (last 20 sessions) |
+| **Personality mode** | Optional feature: train a personality from exported chat logs (Gemini extracts speech patterns, phrases, humor style). Activates in Friend mode only. PIN + email gated. |
+| **Theming** | Full light/dark CSS variable system |
+
+---
+
+## Stack
+
+- **React 19** + **TypeScript** + **Vite**
+- **Google Gemini 2.5 Flash** (text + vision)
+- **Supabase** (auth + PostgreSQL)
+- **pdfjs-dist** (client-side PDF text extraction)
+
+---
+
+## Local setup
+
 ```bash
 npm install
 npm run dev
 ```
 
-## Environment Variables
-Create an environment variable named `API_KEY` (Google Gemini API key).
+Create `.env.local`:
 
-For Vite builds, the key is injected via `process.env.API_KEY` at build time.
+```
+VITE_GEMINI_API_KEY_1=your_gemini_key
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-## Deployment (Render)
-This project is configured for easy deployment as a **Static Site** on [Render.com](https://render.com).
+---
 
-## Deployment Steps
+## Deploy (Render / Vercel / Netlify)
 
-1.  **GitHub**: Push your code to a GitHub repository.
-2.  **Render Dashboard**:
-    *   Click **New +** and select **Static Site**.
-    *   Connect your repository.
-3.  **Build Configuration**:
-    *   **Build Command**: `npm install && npm run build`
-    *   **Publish Directory**: `dist`
-4.  **Environment Variables**:
-    *   Go to the **Environment** tab in your Render service settings.
-    *   Add a new Secret File or Variable:
-        *   **Key**: `API_KEY`
-        *   **Value**: (Your Google Gemini API Key)
-5.  **Save & Deploy**: Render will trigger a build and your site will be live at a custom `.onrender.com` URL.
+**Build command:** `npm install && npm run build`  
+**Publish directory:** `dist`
 
-## How it Works
-Vite bundles TypeScript/React into optimized assets. During the build, Render’s `API_KEY` environment variable is injected so AI features work on deploy.
-
-## Troubleshooting
-- **AI requests failing (503):** transient Gemini overload. Retry after a minute.
-- **Styles not loading on Render:** confirm Publish Directory is `dist` and assets are served without rewrites.
+Add your `.env.local` variables as environment variables in your hosting dashboard.
