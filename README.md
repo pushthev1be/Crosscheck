@@ -1,49 +1,73 @@
 # CrossCheck
 
-**CrossCheck** is a conversational knowledge audit tool. Upload your study notes, and CrossCheck runs you through an adaptive Q&A session to surface exactly what you know and what you don't — then gives you a structured breakdown of your gaps.
+> AI-powered knowledge audit tool — conversational, adaptive, brutally honest about your gaps.
 
-Built with React 19, TypeScript, Google Gemini 2.5 Flash, and Supabase.
+CrossCheck lets you upload study notes and runs you through a live Q&A session that escalates in pressure as you progress, then produces a structured breakdown of exactly what you know and what you don't. Built as a full-stack solo project in React 19 + TypeScript, with Gemini 2.5 Flash handling all AI logic.
 
 ---
 
-## What it does
+## Live demo
 
-Most study tools quiz you passively. CrossCheck interrogates you the way an examiner would — conversationally, with follow-ups, and with escalating pressure as the session progresses.
+**[crosscheck-j4vf.onrender.com](https://crosscheck-j4vf.onrender.com)**
 
-1. **Upload notes** — PDF, plain text, or images (multi-page supported). Gemini Vision extracts and structures the content.
-2. **AI extracts topics** — Key concepts are identified and mapped from the notes automatically.
-3. **Live audit session** — A Gemini-powered examiner works through each topic in conversation. Mode escalates over the session:
-   - **Friend** (0–25%) → relaxed warm-up
+| Upload notes | Live audit | Knowledge report |
+|---|---|---|
+| PDF, image, or plain text | Conversational examiner, adaptive pressure | Strong / Weak / Needs Revisit per topic |
+
+---
+
+## How it works
+
+Most study tools quiz you passively. CrossCheck interrogates you the way an examiner would — conversationally, with follow-ups, escalating difficulty, and no hand-holding.
+
+1. **Upload notes** — PDF, plain text, or images. Client-side extraction via `pdfjs-dist` + Gemini Vision (multi-page, inline base64 in a single API call).
+2. **Topic extraction** — Gemini maps key concepts from the notes automatically.
+3. **Adaptive audit session** — The AI examiner shifts mode as the session progresses:
+   - **Friend** (0–25%) → warm, relaxed warm-up
    - **Tutor** (25–50%) → guided understanding
    - **Instructor** (50–75%) → precise, no soft nudges
    - **Examiner** (75–100%) → rigorous, minimal reactions
-4. **"I don't know"** — One tap gives you the correct answer with explanation, then continues with a simpler follow-up. Topic is marked weak automatically.
-5. **Knowledge report** — After the session, every topic is classified as Strong / Weak / Needs Revisit with evidence. Weak topics expand to show the exact concepts to go back and study.
-6. **Study again** — Re-run a session on the same notes in one click.
+4. **"I don't know"** — One tap delivers the correct answer with explanation, marks the topic weak, and continues with a simpler follow-up.
+5. **Knowledge report** — Every topic scored Strong / Weak / Needs Revisit with supporting evidence. Weak topics expand to show the specific concepts to revisit.
+6. **Personality mode** — Optional: upload exported chat logs and Gemini extracts speech patterns, phrases, and humor style to build a custom AI persona that quizzes you in someone's voice. PIN + email gated.
 
 ---
 
-## Technical highlights
+## Engineering highlights
 
-| Area | Detail |
-|---|---|
-| **AI** | Google Gemini 2.5 Flash via `@google/genai` SDK |
-| **Streaming** | All Gemini calls use `generateContentStream` — bypasses SDK-level JSON validation that throws on truncated structured output |
-| **JSON recovery** | 6-stage `safeParseJSON` pipeline: direct parse → clean (trailing commas, unquoted keys) → slice → repair truncated structures → truncation fallback → regex field extraction |
-| **Vision** | Multi-image OCR via inline base64 in a single Gemini call |
-| **Auth** | Supabase email + password auth |
-| **Persistence** | Session reports stored in localStorage (last 20 sessions) |
-| **Personality mode** | Optional feature: train a personality from exported chat logs (Gemini extracts speech patterns, phrases, humor style). Activates in Friend mode only. PIN + email gated. |
-| **Theming** | Full light/dark CSS variable system |
+### Streaming-first AI pipeline
+All Gemini calls use `generateContentStream` rather than `generateContent`. The SDK throws on structured JSON output that gets truncated before the closing brace — switching to streaming and consuming chunks manually sidesteps the validation entirely.
+
+### Resilient JSON recovery
+Gemini's structured output can still return malformed JSON under token pressure. Built a 6-stage `safeParseJSON` pipeline that handles it gracefully:
+
+1. Direct parse
+2. Clean (trailing commas, unquoted keys, escaped quotes)
+3. Slice to last valid closing brace
+4. Repair truncated arrays/objects
+5. Truncation fallback (extract whatever completed before the cutoff)
+6. Regex field extraction as last resort
+
+Zero crashes in production from malformed AI output.
+
+### Personality extraction
+Conversation logs (WhatsApp, iMessage, Discord) are analyzed by Gemini to extract a `PersonalityStyle` schema: speech patterns, phrase vocabulary, emoji frequency, humor type, reaction style. The result is injected as a system instruction, transforming the examiner's tone in real time.
+
+### Client-side document processing
+PDF text extraction and image OCR run entirely in the browser — no backend file upload, no server storage. Large PDFs are chunked and processed page-by-page via `pdfjs-dist` before being passed to Gemini Vision.
 
 ---
 
 ## Stack
 
-- **React 19** + **TypeScript** + **Vite**
-- **Google Gemini 2.5 Flash** (text + vision)
-- **Supabase** (auth + PostgreSQL)
-- **pdfjs-dist** (client-side PDF text extraction)
+| Layer | Technology |
+|---|---|
+| Frontend | React 19, TypeScript, Vite |
+| AI | Google Gemini 2.5 Flash (`@google/genai`) |
+| Auth + DB | Supabase (email auth + PostgreSQL) |
+| PDF parsing | pdfjs-dist (client-side) |
+| Animations | Framer Motion |
+| Styling | CSS variables (full light/dark theming) |
 
 ---
 
@@ -64,9 +88,9 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 ---
 
-## Deploy (Render / Vercel / Netlify)
+## Deploy
 
-**Build command:** `npm install && npm run build`  
+**Build command:** `npm run build`  
 **Publish directory:** `dist`
 
-Add your `.env.local` variables as environment variables in your hosting dashboard.
+Works on Vercel, Netlify, or Render. Add the `.env.local` variables as environment variables in your hosting dashboard.
