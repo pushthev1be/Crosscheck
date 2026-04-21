@@ -4,6 +4,7 @@
 
 CrossCheck lets you upload study notes and runs you through a live Q&A session that escalates in pressure as you progress, then produces a structured breakdown of exactly what you know and what you don't. Built as a full-stack solo project in React 19 + TypeScript, with Gemini 2.5 Flash handling all AI logic.
 
+<img width="719" height="621" alt="Image" src="https://github.com/user-attachments/assets/85f114e3-032d-4690-8706-ce3ce9cfc1be" />
 ---
 
 ## Live demo
