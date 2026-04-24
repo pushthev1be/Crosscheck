@@ -12,6 +12,7 @@ import { SetupView } from './components/SetupView';
 import { SessionView } from './components/SessionView';
 import { ReportView } from './components/ReportView';
 import { PersonalitySetup } from './components/PersonalitySetup';
+import { WalkthroughOverlay } from './components/WalkthroughOverlay';
 import { ThemeProvider } from './components/ThemeContext';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.mjs?url';
@@ -140,6 +141,7 @@ export default function App() {
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [showPersonalityPopover, setShowPersonalityPopover] = useState(false);
+  const [showWalkthrough, setShowWalkthrough] = useState(() => !localStorage.getItem('crosscheck-walkthrough-seen'));
 
   // Error log
   const [errorLog, setErrorLog] = useState<{ id: string; time: string; context: string; message: string }[]>([]);
@@ -475,6 +477,10 @@ export default function App() {
           <PersonalitySetup onSave={handleSavePersonality} onClose={() => setShowPersonalitySetup(false)} />
         )}
 
+        {showWalkthrough && (
+          <WalkthroughOverlay onClose={() => setShowWalkthrough(false)} />
+        )}
+
         {/* Nav */}
         <nav style={{ width: 200, borderRight: '0.5px solid var(--color-border-tertiary)', display: 'flex', flexDirection: 'column', background: 'var(--color-background-secondary)', flexShrink: 0 }}>
           <div style={{ padding: '18px 16px 14px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
@@ -702,7 +708,12 @@ export default function App() {
               <span style={{ margin: '0 6px', color: 'var(--color-text-tertiary)' }}>—</span>
               <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)' }}>{PAGE_NAMES[activeScreen]}</span>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                onClick={() => setShowWalkthrough(true)}
+                title="Tour"
+                style={{ width: 28, height: 28, borderRadius: '50%', border: '0.5px solid var(--color-border-secondary)', background: 'transparent', color: 'var(--color-text-tertiary)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-sans)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              >?</button>
               {activeScreen === 'session' && (
                 <button onClick={() => handleEndSession()} style={{ padding: '7px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer', background: 'var(--color-background-primary)', color: 'var(--color-text-danger)', border: '0.5px solid var(--color-border-danger)', fontFamily: 'var(--font-sans)' }}>
                   End session

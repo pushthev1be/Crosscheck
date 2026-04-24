@@ -330,69 +330,71 @@ export function SessionView({ session, elapsedSeconds, isAiThinking, onSendMessa
           borderTop: '0.5px solid var(--color-border-tertiary)',
           padding: '12px 16px', flexShrink: 0
         }}>
-          <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 7 }}>
-            Answer in full sentences — explain your reasoning, not just the fact
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isAiThinking}
+            placeholder="Type your answer — explain your reasoning, not just the fact…"
+            style={{
+              width: '100%', resize: 'none', fontSize: 13,
+              fontFamily: 'var(--font-sans)', lineHeight: 1.6,
+              padding: '10px 13px',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 10,
+              background: 'var(--color-background-primary)',
+              color: 'var(--color-text-primary)',
+              height: 68, outline: 'none',
+              opacity: isAiThinking ? 0.5 : 1,
+              boxSizing: 'border-box',
+            }}
+            onFocus={e => (e.target.style.borderColor = 'var(--color-border-primary)')}
+            onBlur={e => (e.target.style.borderColor = 'var(--color-border-secondary)')}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 9, gap: 8 }}>
+            {/* I don't know — amber, prominent */}
+            <button
+              onClick={() => { setInput(''); onSendMessage("I don't know"); }}
               disabled={isAiThinking}
-              placeholder="Type your answer…"
               style={{
-                flex: 1, resize: 'none', fontSize: 13,
-                fontFamily: 'var(--font-sans)', lineHeight: 1.5,
-                padding: '9px 12px',
-                border: '0.5px solid var(--color-border-secondary)',
-                borderRadius: 8,
-                background: 'var(--color-background-primary)',
-                color: 'var(--color-text-primary)',
-                height: 60, outline: 'none',
-                opacity: isAiThinking ? 0.5 : 1
+                padding: '0 16px', height: 38, borderRadius: 8,
+                background: isAiThinking ? 'transparent' : 'rgba(186,117,23,0.1)',
+                color: '#BA7517',
+                fontSize: 12, fontWeight: 600,
+                cursor: isAiThinking ? 'not-allowed' : 'pointer',
+                opacity: isAiThinking ? 0.35 : 1,
+                border: '1px solid rgba(186,117,23,0.4)',
+                fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap',
+                transition: 'background 0.15s',
               }}
-              onFocus={e => (e.target.style.borderColor = 'var(--color-border-primary)')}
-              onBlur={e => (e.target.style.borderColor = 'var(--color-border-secondary)')}
-            />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              onMouseEnter={e => { if (!isAiThinking) (e.currentTarget.style.background = 'rgba(186,117,23,0.18)'); }}
+              onMouseLeave={e => { if (!isAiThinking) (e.currentTarget.style.background = 'rgba(186,117,23,0.1)'); }}
+            >
+              I don't know
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                {words} word{words !== 1 ? 's' : ''}
+              </span>
+              {/* Send — solid primary */}
               <button
                 onClick={handleSend}
                 disabled={!input.trim() || isAiThinking}
                 style={{
-                  padding: '0 14px', height: 38, borderRadius: 8,
-                  background: 'var(--color-text-primary)',
+                  padding: '0 22px', height: 38, borderRadius: 8,
+                  background: input.trim() && !isAiThinking ? 'var(--color-text-primary)' : 'var(--color-border-secondary)',
                   color: 'var(--color-background-primary)',
-                  fontSize: 12, fontWeight: 500,
+                  fontSize: 13, fontWeight: 600,
                   cursor: input.trim() && !isAiThinking ? 'pointer' : 'not-allowed',
-                  opacity: input.trim() && !isAiThinking ? 1 : 0.4,
-                  border: 'none', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap'
+                  border: 'none', fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap',
+                  transition: 'background 0.15s',
+                  letterSpacing: '0.01em',
                 }}
               >
-                Send
-              </button>
-              <button
-                onClick={() => { setInput(''); onSendMessage("I don't know"); }}
-                disabled={isAiThinking}
-                style={{
-                  padding: '0 14px', height: 26, borderRadius: 6,
-                  background: 'transparent',
-                  color: 'var(--color-text-tertiary)',
-                  fontSize: 11, fontWeight: 500,
-                  cursor: isAiThinking ? 'not-allowed' : 'pointer',
-                  opacity: isAiThinking ? 0.4 : 1,
-                  border: '0.5px solid var(--color-border-tertiary)',
-                  fontFamily: 'var(--font-sans)', whiteSpace: 'nowrap'
-                }}
-              >
-                I don't know
+                Send →
               </button>
             </div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7 }}>
-            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-              {words} word{words !== 1 ? 's' : ''}
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Full sentences only</span>
           </div>
         </div>
       </div>

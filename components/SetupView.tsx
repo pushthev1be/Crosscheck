@@ -220,9 +220,17 @@ export function SetupView({
                 <button
                   onClick={handleGenerate}
                   disabled={!selectedPageIds.length}
-                  style={{ padding: '6px 14px', fontSize: 11, fontWeight: 500, border: 'none', borderRadius: 6, background: selectedPageIds.length ? 'var(--color-text-primary)' : 'var(--color-border-tertiary)', color: selectedPageIds.length ? 'var(--color-background-primary)' : 'var(--color-text-tertiary)', cursor: selectedPageIds.length ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-sans)' }}
+                  style={{
+                    padding: '7px 16px', fontSize: 12, fontWeight: 600, border: 'none', borderRadius: 7,
+                    background: selectedPageIds.length ? '#6B3F9E' : 'var(--color-border-tertiary)',
+                    color: selectedPageIds.length ? '#fff' : 'var(--color-text-tertiary)',
+                    cursor: selectedPageIds.length ? 'pointer' : 'not-allowed',
+                    fontFamily: 'var(--font-sans)',
+                    boxShadow: selectedPageIds.length ? '0 2px 8px rgba(107,63,158,0.35)' : 'none',
+                    transition: 'all 0.15s',
+                  }}
                 >
-                  Generate questions ({selectedPageIds.length} selected)
+                  Generate questions {selectedPageIds.length > 0 ? `(${selectedPageIds.length} pages)` : ''}
                 </button>
               </div>
             </>
