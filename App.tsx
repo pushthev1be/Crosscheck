@@ -1,7 +1,9 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { AppState, User, CheckSession, SessionDuration, QAMessage, ExtractedTopic, TopicPerformance, SessionTurnResponse, KnowledgeReport, PersonalityProfile } from './types';
+import { AppState, User, CheckSession, SessionDuration, QAMessage, ExtractedTopic, TopicPerformance, SessionTurnResponse, KnowledgeReport, PersonalityProfile, ExtractedImage, DiagramQuestion } from './types';
 import { extractTopicsFromNotes, runSessionTurn, generateKnowledgeReport, extractTextFromImage } from './services/geminiService';
+import { generateDiagramQuestion } from './services/nvidiaService';
+import { upsertSession, getUserSessions, PersistedSession } from './services/sessionService';
 import { supabase } from './services/supabaseClient';
 import { AuthView } from './components/AuthView';
 import { BrandMark } from './components/BrandMark';
@@ -34,15 +36,53 @@ async function extractTextFromPdf(file: File): Promise<string> {
   return pages.join('\n\n');
 }
 
-function loadPastReports(): KnowledgeReport[] {
-  try {
-    const raw = localStorage.getItem('crosscheck-reports');
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
+async function extractImagesFromPdf(file: File): Promise<ExtractedImage[]> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const images: ExtractedImage[] = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1.5 });
 
-function savePastReports(reports: KnowledgeReport[]) {
-  try { localStorage.setItem('crosscheck-reports', JSON.stringify(reports.slice(-20))); } catch {}
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) continue;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+
+    // Build a text-redacted copy using pdfjs's exact text coordinates
+    let maskedDataUrl = dataUrl;
+    try {
+      const textContent = await page.getTextContent();
+      const mc = document.createElement('canvas');
+      mc.width = viewport.width;
+      mc.height = viewport.height;
+      const mctx = mc.getContext('2d')!;
+      mctx.drawImage(canvas, 0, 0);
+      mctx.fillStyle = '#1a1a2e'; // dark redaction block
+
+      for (const item of textContent.items as any[]) {
+        if (!item.str?.trim() || item.width <= 0) continue;
+        // Transform item's local matrix into canvas (viewport) coordinates
+        const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+        const fontH = Math.abs(tx[3]);
+        // Measure true pixel width using canvas API (more accurate than scaling width field)
+        mctx.font = `${fontH}px sans-serif`;
+        const textW = mctx.measureText(item.str).width;
+        const pad = 4;
+        // tx[5] is the text baseline in canvas y; text body sits above it
+        mctx.fillRect(tx[4] - pad, tx[5] - fontH - pad, textW + pad * 2, fontH * 1.4 + pad);
+      }
+      maskedDataUrl = mc.toDataURL('image/jpeg', 0.82);
+    } catch (e) {
+      console.warn('[extractImagesFromPdf] mask failed page', i, e);
+    }
+
+    images.push({ id: `page_${i}`, pageNumber: i, dataUrl, maskedDataUrl });
+  }
+  return images;
 }
 
 // Nav SVG icons
@@ -72,6 +112,11 @@ export default function App() {
   const [extractedTopics, setExtractedTopics] = useState<ExtractedTopic[]>([]);
   const [selectedDuration, setSelectedDuration] = useState<SessionDuration>(30);
 
+  // Diagram questions
+  const [extractedImages, setExtractedImages] = useState<ExtractedImage[]>([]);
+  const [diagramQuestions, setDiagramQuestions] = useState<DiagramQuestion[]>([]);
+  const [isGeneratingDiagramQs, setIsGeneratingDiagramQs] = useState(false);
+
   // Session
   const [session, setSession] = useState<CheckSession | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -79,8 +124,10 @@ export default function App() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const overtimeTriggeredRef = useRef(false);
 
-  // Reports
-  const [pastReports, setPastReports] = useState<KnowledgeReport[]>(loadPastReports);
+  // Saved sessions from Supabase
+  const [savedSessions, setSavedSessions] = useState<PersistedSession[]>([]);
+
+  // Reports (kept in-memory for backward compat; completed sessions also live in DB)
   const [viewingReport, setViewingReport] = useState<KnowledgeReport | null>(null);
 
   // Personality
@@ -110,12 +157,15 @@ export default function App() {
     console.error(`[${context}]`, err);
   };
 
-  // Auth check
+  // Auth check + load saved sessions
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: { data: any }) => { const sb = data.session;
+    supabase.auth.getSession().then(({ data }: { data: any }) => {
+      const sb = data.session;
       if (sb?.user) {
-        setUser({ id: sb.user.id, username: sb.user.user_metadata?.username || sb.user.email?.split('@')[0] || 'User', email: sb.user.email || '', joinedAt: sb.user.created_at || '' });
+        const u: User = { id: sb.user.id, username: sb.user.user_metadata?.username || sb.user.email?.split('@')[0] || 'User', email: sb.user.email || '', joinedAt: sb.user.created_at || '' };
+        setUser(u);
         setAppState(AppState.IDLE);
+        getUserSessions(sb.user.id).then(setSavedSessions).catch(() => {});
       }
     });
   }, []);
@@ -146,12 +196,24 @@ export default function App() {
     }
   }, [elapsedSeconds, session, appState]);
 
-  const handleAuth = (u: User) => { setUser(u); setAppState(AppState.IDLE); };
+  const refreshSavedSessions = useCallback(async () => {
+    if (!user?.id) return;
+    const sessions = await getUserSessions(user.id).catch(() => [] as PersistedSession[]);
+    setSavedSessions(sessions);
+  }, [user?.id]);
+
+  const handleAuth = (u: User) => {
+    setUser(u);
+    setAppState(AppState.IDLE);
+    if (u.id) getUserSessions(u.id).then(setSavedSessions).catch(() => {});
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null); setSession(null); setNoteContent(''); setNoteTitle('');
     setExtractedTopics([]); setUploadedFile(null); setElapsedSeconds(0);
+    setExtractedImages([]); setDiagramQuestions([]);
+    setSavedSessions([]);
     overtimeTriggeredRef.current = false;
     setAppState(AppState.AUTH); setActiveScreen('home');
   };
@@ -177,13 +239,21 @@ export default function App() {
     const primary = fileList[0];
     setAppState(AppState.UPLOADING);
     setActiveScreen('setup');
+    setExtractedImages([]);
+    setDiagramQuestions([]);
     try {
       let content: string;
       const images = fileList.filter(f => f.type.startsWith('image/'));
       if (images.length > 0) {
         content = await extractTextFromImage(images.length === 1 ? images[0] : images);
       } else if (primary.type === 'application/pdf') {
-        content = await extractTextFromPdf(primary);
+        // Extract text and page images in parallel
+        const [text, pageImages] = await Promise.all([
+          extractTextFromPdf(primary),
+          extractImagesFromPdf(primary),
+        ]);
+        content = text;
+        setExtractedImages(pageImages);
       } else {
         content = await primary.text();
       }
@@ -196,26 +266,73 @@ export default function App() {
     }
   };
 
+  const handleGenerateDiagramQuestions = useCallback(async (selectedIds: string[]) => {
+    const selected = extractedImages.filter(img => selectedIds.includes(img.id));
+    if (!selected.length) return;
+    setIsGeneratingDiagramQs(true);
+    const generated: DiagramQuestion[] = [];
+    const prevQuestions: string[] = [];
+    for (const img of selected) {
+      // Generate 3 distinct questions per page
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const question = await generateDiagramQuestion(img.dataUrl, extractedTopics, prevQuestions);
+          const dq: DiagramQuestion = {
+            id: generateId(),
+            pageNumber: img.pageNumber,
+            question,
+            used: false,
+            imageDataUrl: img.maskedDataUrl ?? img.dataUrl,
+          };
+          generated.push(dq);
+          prevQuestions.push(question);
+        } catch (e: any) {
+          logError('generateDiagramQuestion', e);
+          break; // stop retrying this page on error
+        }
+      }
+    }
+    setDiagramQuestions(generated);
+    setIsGeneratingDiagramQs(false);
+  }, [extractedImages, extractedTopics]);
+
   const handleStartSession = useCallback(async () => {
     if (!extractedTopics.length) return;
     const newSession: CheckSession = {
-      id: generateId(), uploadTitle: noteTitle, noteContent, topics: extractedTopics,
-      messages: [], duration: selectedDuration, startTime: Date.now(),
-      isOvertimeActive: false, topicPerformances: {}, status: 'active'
+      id: generateId(),
+      uploadTitle: noteTitle,
+      noteContent,
+      topics: extractedTopics,
+      messages: [],
+      duration: selectedDuration,
+      startTime: Date.now(),
+      isOvertimeActive: false,
+      topicPerformances: {},
+      status: 'active',
+      extractedImages,
+      diagramQuestions,
+      diagramQuestionsEnabled: diagramQuestions.length > 0,
     };
     setSession(newSession); setElapsedSeconds(0);
     overtimeTriggeredRef.current = false;
     setIsAiThinking(true); setAppState(AppState.SESSION_ACTIVE); setActiveScreen('session');
 
+    if (user?.id) upsertSession(newSession, user.id, 0).catch(() => {});
+
     try {
       const turn = await runSessionTurn(newSession, null, 0, true, personalityActive ? personality ?? undefined : undefined);
       const aiMsg: QAMessage = { id: generateId(), role: 'ai', content: turn.message, topicId: turn.currentTopicId, tag: 'question', timestamp: Date.now() };
-      setSession(prev => prev ? { ...prev, messages: [aiMsg] } : prev);
+      setSession(prev => {
+        if (!prev) return prev;
+        const updated = { ...prev, messages: [aiMsg] };
+        if (user?.id) upsertSession(updated, user.id, 0).catch(() => {});
+        return updated;
+      });
     } catch (e) {
       logError('startSession', e);
       setSession(prev => prev ? { ...prev, messages: [{ id: generateId(), role: 'ai', content: 'The audit is beginning. Walk me through the main topics covered in your notes.', timestamp: Date.now() }] } : prev);
     } finally { setIsAiThinking(false); }
-  }, [extractedTopics, noteTitle, noteContent, selectedDuration]);
+  }, [extractedTopics, noteTitle, noteContent, selectedDuration, extractedImages, diagramQuestions, user?.id, personality, personalityActive]);
 
   const handleSendMessage = useCallback(async (text: string) => {
     if (!session || isAiThinking) return;
@@ -233,14 +350,41 @@ export default function App() {
         if (t) newPerfs[t.id] = { topicId: t.id, topicName: t.name, status: turn.topicUpdate.status as any, evidence: turn.topicUpdate.evidence, noteSection: t.noteSection, concepts: t.concepts };
       }
 
-      const next: CheckSession = { ...updated, messages: [...updated.messages, aiMsg], topicPerformances: newPerfs };
+      let next: CheckSession = { ...updated, messages: [...updated.messages, aiMsg], topicPerformances: newPerfs };
+
+      // Inject diagram question every 4th AI message if available
+      const aiCount = next.messages.filter(m => m.role === 'ai').length;
+      const pendingDiagram = next.diagramQuestionsEnabled
+        ? next.diagramQuestions.find(q => !q.used)
+        : undefined;
+
+      if (pendingDiagram && aiCount > 0 && aiCount % 4 === 0) {
+        const diagramMsg: QAMessage = {
+          id: generateId(),
+          role: 'ai',
+          content: pendingDiagram.question,
+          tag: 'diagram',
+          imageId: pendingDiagram.id,
+          timestamp: Date.now() + 1,
+        };
+        next = {
+          ...next,
+          messages: [...next.messages, diagramMsg],
+          diagramQuestions: next.diagramQuestions.map(q =>
+            q.id === pendingDiagram.id ? { ...q, used: true } : q
+          ),
+        };
+      }
+
       setSession(next);
+      if (user?.id) upsertSession(next, user.id, elapsedSeconds).catch(() => {});
+
       if (turn.sessionShouldEnd && !turn.overtimeNeeded) setTimeout(() => handleEndSession(next), 800);
     } catch (e) {
       logError('sendMessage', e);
       setSession(prev => prev ? { ...prev, messages: [...prev.messages, { id: generateId(), role: 'ai', content: 'Connection issue. Please try again.', timestamp: Date.now() }] } : prev);
     } finally { setIsAiThinking(false); }
-  }, [session, isAiThinking, elapsedSeconds]);
+  }, [session, isAiThinking, elapsedSeconds, user?.id, personality, personalityActive]);
 
   const handleEndSession = useCallback(async (override?: CheckSession) => {
     const active = override || session;
@@ -251,32 +395,45 @@ export default function App() {
 
     try {
       const report = await generateKnowledgeReport(final);
-      setSession(prev => prev ? { ...prev, report } : prev);
+      const withReport = { ...final, report };
+      setSession(withReport);
       setViewingReport(report);
-      const updated = [...pastReports, report];
-      setPastReports(updated); savePastReports(updated);
+      if (user?.id) upsertSession(withReport, user.id, elapsedSeconds).catch(() => {});
     } catch (e) {
       logError('endSession/generateReport', e);
       const topics = final.topics.map(t => final.topicPerformances[t.id] || { topicId: t.id, topicName: t.name, status: 'untested' as const, evidence: 'Not covered.', concepts: t.concepts });
       const report: KnowledgeReport = { sessionId: final.id, date: new Date().toISOString(), uploadTitle: final.uploadTitle, durationMinutes: final.duration, actualDurationMinutes: Math.round((Date.now() - final.startTime) / 60000), topics, revisitList: topics.filter(t => t.status === 'weak' || t.status === 'revisit').flatMap(t => t.concepts.slice(0, 2).map(c => ({ concept: c, topicName: t.topicName }))), overtimeUsed: final.isOvertimeActive };
       setViewingReport(report);
-      const updated = [...pastReports, report];
-      setPastReports(updated); savePastReports(updated);
+      if (user?.id) upsertSession({ ...final, report }, user.id, elapsedSeconds).catch(() => {});
     } finally {
       setIsAiThinking(false);
       setAppState(AppState.REPORT); setActiveScreen('report');
+      refreshSavedSessions();
     }
-  }, [session, pastReports]);
+  }, [session, elapsedSeconds, user?.id, refreshSavedSessions]);
+
+  const handleResumeSession = useCallback((persisted: PersistedSession) => {
+    const restored: CheckSession = { ...persisted, extractedImages: [] };
+    setSession(restored);
+    setElapsedSeconds(persisted.elapsedSeconds);
+    setNoteContent(persisted.noteContent);
+    setNoteTitle(persisted.uploadTitle);
+    setExtractedTopics(persisted.topics);
+    setExtractedImages([]);
+    setDiagramQuestions(persisted.diagramQuestions);
+    overtimeTriggeredRef.current = persisted.status === 'overtime';
+    setAppState(AppState.SESSION_ACTIVE);
+    setActiveScreen('session');
+  }, []);
 
   const handleNewSession = () => {
     setSession(null); setNoteContent(''); setNoteTitle(''); setExtractedTopics([]);
     setUploadedFile(null); setElapsedSeconds(0); overtimeTriggeredRef.current = false;
+    setExtractedImages([]); setDiagramQuestions([]);
     setViewingReport(null); setAppState(AppState.IDLE); setActiveScreen('setup');
   };
 
   const handleStudyAgain = () => {
-    // If we still have the notes from the last session, go straight to setup with them loaded
-    // Otherwise navigate to setup for a fresh upload
     setSession(null); setElapsedSeconds(0); overtimeTriggeredRef.current = false;
     setViewingReport(null);
     if (noteContent && extractedTopics.length > 0) {
@@ -308,6 +465,7 @@ export default function App() {
   }
 
   const displayReport = viewingReport || (session?.report ?? null);
+  const incompleteSessions = savedSessions.filter(s => s.status !== 'complete');
 
   return (
     <ThemeProvider>
@@ -335,7 +493,7 @@ export default function App() {
                     setPersonalityActive(false);
                     setShowPersonalityPopover(false);
                   } else {
-                    const emailMatch = true; // TODO: restore email gate — const emailMatch = user?.email?.toLowerCase() === personality.authorizedEmail.toLowerCase();
+                    const emailMatch = true;
                     if (!emailMatch) {
                       setPinError('not-authorized');
                       setShowPersonalityPopover(true);
@@ -373,7 +531,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* PIN / blocked popover */}
               {showPersonalityPopover && !personalityActive && (
                 <div style={{
                   position: 'absolute', top: '100%', left: 16, right: 16, zIndex: 100,
@@ -485,7 +642,6 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: 'auto', borderTop: '0.5px solid var(--color-border-tertiary)' }}>
-            {/* Error log button */}
             {errorLog.length > 0 && (
               <div style={{ padding: '8px 10px 0' }}>
                 <button onClick={() => setShowErrorLog(true)} style={{
@@ -576,15 +732,17 @@ export default function App() {
           {/* Content */}
           <div style={{
             flex: 1,
-            overflowY: activeScreen === 'session' ? 'hidden' : 'auto',
-            overflow: activeScreen === 'session' ? 'hidden' : undefined
+            minHeight: 0,
+            overflow: activeScreen === 'session' ? 'hidden' : 'auto',
           }}>
             {activeScreen === 'home' && (
               <HomeView
-                pastReports={pastReports}
+                incompleteSessions={incompleteSessions}
+                completedSessions={savedSessions.filter(s => s.status === 'complete')}
                 onFileUpload={handleFileUpload}
                 onViewReport={handleViewReport}
                 onStartNewSession={() => setActiveScreen('setup')}
+                onResumeSession={handleResumeSession}
               />
             )}
             {activeScreen === 'setup' && (
@@ -597,6 +755,10 @@ export default function App() {
                 onDurationChange={setSelectedDuration}
                 onFileUpload={handleFileUpload}
                 onBeginSession={handleStartSession}
+                extractedImages={extractedImages}
+                diagramQuestions={diagramQuestions}
+                isGeneratingDiagramQs={isGeneratingDiagramQs}
+                onGenerateDiagramQuestions={handleGenerateDiagramQuestions}
               />
             )}
             {activeScreen === 'session' && session && (

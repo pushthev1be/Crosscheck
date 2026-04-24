@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { CheckSession, TopicStatus, PersonalityProfile } from '../types';
+import { CheckSession, TopicStatus, PersonalityProfile, DiagramQuestion } from '../types';
 
 interface Props {
   session: CheckSession;
@@ -37,7 +37,16 @@ function wordCount(text: string): number {
 
 export function SessionView({ session, elapsedSeconds, isAiThinking, onSendMessage, personality, personalityActive }: Props) {
   const [input, setInput] = useState('');
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [revealedImages, setRevealedImages] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!lightboxSrc) return;
+    const close = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightboxSrc(null); };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [lightboxSrc]);
 
   const totalSeconds = session.duration * 60;
   const remainingSeconds = Math.max(0, totalSeconds - elapsedSeconds);
@@ -172,11 +181,16 @@ export function SessionView({ session, elapsedSeconds, isAiThinking, onSendMessa
         </div>
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
           {session.messages.map(msg => {
             const isUser = msg.role === 'user';
             const showPersonality = !isUser && personalityActive && personality;
             const aiName = showPersonality ? personality!.name : 'Cross Check';
+            const isDiagram = msg.tag === 'diagram';
+            const diagramQ = isDiagram && msg.imageId
+              ? session.diagramQuestions.find(q => q.id === msg.imageId)
+              : undefined;
+
             return (
               <div key={msg.id} style={{ display: 'flex', gap: 10, flexDirection: isUser ? 'row-reverse' : 'row' }}>
                 {/* Avatar */}
@@ -197,24 +211,65 @@ export function SessionView({ session, elapsedSeconds, isAiThinking, onSendMessa
                   </div>
                 )}
                 <div style={{ maxWidth: '76%' }}>
-                  <div style={{
-                    fontSize: 10, color: 'var(--color-text-tertiary)',
-                    fontWeight: 500, letterSpacing: '0.04em', marginBottom: 4,
-                    textAlign: isUser ? 'right' : 'left'
-                  }}>
+                  <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontWeight: 500, letterSpacing: '0.04em', marginBottom: 4, textAlign: isUser ? 'right' : 'left' }}>
                     {isUser ? 'You' : aiName}
                   </div>
                   {!isUser && msg.tag && (
                     <div style={{
                       display: 'inline-block', fontSize: 10, fontWeight: 500,
                       padding: '2px 7px', borderRadius: 4, marginBottom: 5,
-                      ...(msg.tag === 'question'
-                        ? { background: '#E6F1FB', color: '#0C447C' }
-                        : { background: '#FAEEDA', color: '#633806' })
+                      ...(msg.tag === 'diagram'
+                        ? { background: '#F0EBF8', color: '#6B3F9E' }
+                        : msg.tag === 'question'
+                          ? { background: '#E6F1FB', color: '#0C447C' }
+                          : { background: '#FAEEDA', color: '#633806' })
                     }}>
-                      {msg.tag === 'question' ? 'Question' : 'Follow-up'}
+                      {msg.tag === 'diagram' ? 'Diagram' : msg.tag === 'question' ? 'Question' : 'Follow-up'}
                     </div>
                   )}
+                  {/* Diagram image card */}
+                  {diagramQ?.imageDataUrl && (() => {
+                    const revealed = revealedImages.has(diagramQ.id);
+                    return (
+                      <div style={{ marginBottom: 8, borderRadius: 8, overflow: 'hidden', border: '0.5px solid var(--color-border-secondary)', maxWidth: 300, position: 'relative' }}>
+                        <div
+                          onClick={() => revealed ? setLightboxSrc(diagramQ.imageDataUrl!) : undefined}
+                          style={{ position: 'relative', cursor: revealed ? 'zoom-in' : 'default' }}
+                        >
+                          <img
+                            src={diagramQ.imageDataUrl}
+                            alt={`Page ${diagramQ.pageNumber}`}
+                            style={{ width: '100%', display: 'block', filter: revealed ? 'none' : 'blur(10px)', transition: 'filter 0.3s ease' }}
+                          />
+                          {!revealed && (
+                            <div style={{
+                              position: 'absolute', inset: 0,
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                              background: 'rgba(0,0,0,0.25)', gap: 8
+                            }}>
+                              <div style={{ fontSize: 11, color: '#fff', fontWeight: 500, textShadow: '0 1px 4px rgba(0,0,0,0.6)', textAlign: 'center', padding: '0 12px' }}>
+                                Answer first, then reveal
+                              </div>
+                              <button
+                                onClick={() => setRevealedImages(prev => new Set([...prev, diagramQ.id]))}
+                                style={{
+                                  padding: '5px 14px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                                  background: 'rgba(255,255,255,0.9)', color: '#111',
+                                  border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)'
+                                }}
+                              >
+                                Reveal image
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ padding: '5px 10px', background: 'var(--color-background-secondary)', fontSize: 10, color: 'var(--color-text-tertiary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>Page {diagramQ.pageNumber}</span>
+                          {revealed && <span style={{ opacity: 0.5 }}>click to enlarge</span>}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div style={{
                     fontSize: 13, lineHeight: 1.6,
                     color: 'var(--color-text-primary)',
@@ -341,6 +396,42 @@ export function SessionView({ session, elapsedSeconds, isAiThinking, onSendMessa
           </div>
         </div>
       </div>
+
+      {lightboxSrc && (
+        <div
+          onClick={() => setLightboxSrc(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 500,
+            background: 'rgba(0,0,0,0.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'zoom-out'
+          }}
+        >
+          <img
+            src={lightboxSrc}
+            alt="Diagram enlarged"
+            onClick={e => e.stopPropagation()}
+            style={{
+              maxWidth: '90vw', maxHeight: '90vh',
+              borderRadius: 8,
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+              cursor: 'default'
+            }}
+          />
+          <button
+            onClick={() => setLightboxSrc(null)}
+            style={{
+              position: 'absolute', top: 20, right: 24,
+              background: 'rgba(255,255,255,0.15)', border: 'none',
+              color: '#fff', fontSize: 22, width: 36, height: 36,
+              borderRadius: '50%', cursor: 'pointer', lineHeight: 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <style>{`
         @keyframes cc-bounce {

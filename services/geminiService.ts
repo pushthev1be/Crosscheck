@@ -176,8 +176,8 @@ function safeParseJSON(text: string): any {
       return null;
     };
     // Try to get a partial message string (may be truncated)
-    const msgMatch = stripped.match(/"message"\s*:\s*"([\s\S]*)/);
-    const partialMsg = msgMatch ? msgMatch[1].replace(/\\n/g, ' ').replace(/\\"/g, '"').replace(/\\./g, '').slice(0, 200) : '';
+    const msgMatch = stripped.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const partialMsg = msgMatch ? msgMatch[1].replace(/\\n/g, ' ').replace(/\\"/g, '"') : '';
     const result: any = {
       isFollowUp: extract('isFollowUp', 'bool') ?? false,
       currentTopicId: extract('currentTopicId', 'string') ?? '',
@@ -362,6 +362,7 @@ STUDENT SAID "I DON'T KNOW":
       config: {
         systemInstruction,
         maxOutputTokens: isDontKnow ? 800 : 500,
+        responseMimeType: 'application/json',
         thinkingConfig: { thinkingBudget: 0 }
       }
     });
@@ -376,6 +377,52 @@ STUDENT SAID "I DON'T KNOW":
     if (!text.trim()) throw new Error("Empty response from Gemini");
     return safeParseJSON(text) as SessionTurnResponse;
   });
+}
+
+export async function detectTextRegions(imageDataUrl: string, question: string): Promise<Array<{x: number; y: number; w: number; h: number}>> {
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY_1 || '' });
+  const base64 = imageDataUrl.replace(/^data:image\/[a-z+]+;base64,/, '');
+  const mimeType = (imageDataUrl.match(/^data:(image\/[a-z+]+);/) ?? [])[1] ?? 'image/jpeg';
+
+  const stream = await ai.models.generateContentStream({
+    model: 'gemini-2.5-flash',
+    contents: [{
+      role: 'user',
+      parts: [
+        { inlineData: { mimeType, data: base64 } },
+        { text: `A student will be asked this question about this image:
+"${question}"
+
+Your job: identify ONLY the text regions that directly reveal the answer to that question. This includes filled-in answers, answer keys, solution labels, result values, or any text that gives away what the student should figure out themselves.
+
+DO NOT redact: axis labels, category names, diagram titles, scale indicators, or any text needed to understand and interpret the diagram — only redact text that GIVES AWAY the answer.
+
+For each region to redact, return its bounding box as percentages of image dimensions with 4px of extra padding.
+
+Return ONLY a JSON array. Each item: {"x": leftEdge%, "y": topEdge%, "w": width%, "h": height%}
+Values are 0–100. Return [] if nothing needs to be hidden. No explanation, no markdown — just the JSON array.` }
+      ]
+    }],
+    config: { maxOutputTokens: 1500, thinkingConfig: { thinkingBudget: 0 } }
+  });
+
+  let text = '';
+  for await (const chunk of stream) {
+    const part = chunk.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (typeof part === 'string') text += part;
+  }
+
+  try {
+    const regions = safeParseJSON(text);
+    if (!Array.isArray(regions)) return [];
+    return regions.filter((r: any) =>
+      typeof r.x === 'number' && typeof r.y === 'number' &&
+      typeof r.w === 'number' && typeof r.h === 'number'
+    );
+  } catch {
+    console.warn('[detectTextRegions] parse failed:', text.slice(0, 200));
+    return [];
+  }
 }
 
 export async function generateKnowledgeReport(session: CheckSession): Promise<KnowledgeReport> {

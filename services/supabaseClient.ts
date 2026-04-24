@@ -12,11 +12,29 @@ const isValidUrl = (url: string) => {
     }
 };
 
+const noopChain: any = {
+    upsert: () => Promise.resolve({ error: null }),
+    insert: () => Promise.resolve({ error: null }),
+    update: () => noopChain,
+    delete: () => noopChain,
+    select: () => noopChain,
+    eq: () => noopChain,
+    neq: () => noopChain,
+    order: () => Promise.resolve({ data: [], error: null }),
+    match: () => Promise.resolve({ data: [], error: null }),
+    single: () => Promise.resolve({ data: null, error: null }),
+    then: undefined,
+};
+
 export const supabase = isValidUrl(supabaseUrl)
     ? createClient(supabaseUrl, supabaseAnonKey)
     : {
-        from: () => ({
-            upsert: () => Promise.resolve({ error: { message: 'Supabase URL not configured' } }),
-            select: () => ({ match: () => Promise.resolve({ data: [], error: null }) })
-        })
+        from: () => noopChain,
+        auth: {
+            getSession: () => Promise.resolve({ data: { session: null } }),
+            signOut: () => Promise.resolve({}),
+            signInWithPassword: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+            signUp: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+            onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+        }
     } as any;

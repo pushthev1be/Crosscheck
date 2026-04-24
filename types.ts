@@ -16,12 +16,28 @@ export interface ExtractedTopic {
   noteSection?: string;
 }
 
+export interface ExtractedImage {
+  id: string;
+  pageNumber: number;
+  dataUrl: string;       // in-memory only — never persisted to DB
+  maskedDataUrl?: string; // text labels painted over — shown to student in chat
+}
+
+export interface DiagramQuestion {
+  id: string;
+  pageNumber: number;
+  question: string;
+  used: boolean;
+  imageDataUrl?: string; // in-memory only — stripped before DB save
+}
+
 export interface QAMessage {
   id: string;
   role: 'ai' | 'user';
   content: string;
   topicId?: string;
-  tag?: 'question' | 'followup';
+  tag?: 'question' | 'followup' | 'diagram';
+  imageId?: string; // links to a DiagramQuestion
   timestamp: number;
 }
 
@@ -64,6 +80,9 @@ export interface CheckSession {
   topicPerformances: Record<string, TopicPerformance>;
   report?: KnowledgeReport;
   status: 'setup' | 'active' | 'overtime' | 'complete';
+  extractedImages: ExtractedImage[];     // in-memory only
+  diagramQuestions: DiagramQuestion[];   // persisted without imageDataUrl
+  diagramQuestionsEnabled: boolean;
 }
 
 export interface SessionTurnResponse {
