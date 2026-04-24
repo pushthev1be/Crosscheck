@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: crosscheck
+    env: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    headers:
+      - path: /assets/*.css
+        name: Content-Type
+        value: text/css; charset=utf-8
+      - path: /assets/*.js
+        name: Content-Type
+        value: application/javascript; charset=utf-8
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
