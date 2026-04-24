@@ -206,6 +206,45 @@ export function HomeView({ incompleteSessions, completedSessions, onFileUpload, 
           </div>
         </>
       )}
+
+      {/* About */}
+      <div style={{ marginTop: 32, paddingTop: 20, borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+        <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>About</div>
+        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.75, maxWidth: 500 }}>
+          CrossCheck was built by{' '}
+          <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>push</span>
+          {' '}— a developer focused on building AI-native tools that actually change how people work and learn.
+          CrossCheck started as a personal tool to stop passive rereading and start actually testing knowledge.
+        </div>
+        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <a
+            href="https://oracleai.live"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 12, fontWeight: 500,
+              color: 'var(--color-text-primary)',
+              background: 'var(--color-background-secondary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 7, padding: '6px 13px',
+              textDecoration: 'none',
+              transition: 'border-color 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-primary)')}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border-secondary)')}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" />
+              <path d="M8 2C8 2 6 5 6 8s2 6 2 6" stroke="currentColor" strokeWidth="1.2" />
+              <path d="M8 2C8 2 10 5 10 8s-2 6-2 6" stroke="currentColor" strokeWidth="1.2" />
+              <path d="M2 8h12" stroke="currentColor" strokeWidth="1.2" />
+            </svg>
+            oracleai.live
+          </a>
+          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Another project by push</span>
+        </div>
+      </div>
     </div>
   );
 }
